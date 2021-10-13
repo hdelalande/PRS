@@ -116,50 +116,159 @@ int main(int argc, char* argv[]) {
                 int taille_DATA = 1018;
                 int seg_nb = 1;
                 char name_fichier[30];
-                struct timeval timeout;
+                struct timeval timeout, zero;
+                zero.tv_sec=0;
+                zero.tv_usec=0;
                 fd_set readfs_fils;
                 FD_ZERO(&readfs_fils);
- 
+                //paramètre de la fenetre
+                int taille_fenetre = 4;
+                char seg_data[500][1024];
+                int dernier_seg=1;
+                int dernier_ack=0;
+                char ack_char[6];
+                int numero_ack;
+                int retransmission = 0;
+                int ack_final;
                 //Méthode pour envoyer le fichier 
                 memcpy(name_fichier,buffer,30);
                 bzero(buffer, sizeof(buffer));
                 fichier = fopen(name_fichier, "r");
-                while(taille_DATA==1018){
-                    sprintf(buffer,"%06d",seg_nb);
-                    taille_DATA = fread(chaine,1,1018,fichier);
-                    memcpy(buffer+6,chaine,taille_DATA);
-                    if((desc_value = sendto(socket_data, (const char*)buffer, sizeof(buffer), 0, (struct sockaddr*)&clientAddr, sizeof(clientAddr))) < 0){
-                            perror("Erreur sendto");
-                            exit(0);
-                    }
-                    while(1){
-                        timeout.tv_sec = 0;
-                        timeout.tv_usec = 700000;
-                        FD_SET(socket_data, &readfs_fils);
-                        int ret;
-                        if((ret = select(6, &readfs_fils, NULL, NULL, &timeout)) < 0) {
-                            perror("select()");
-                            exit(0);
-                        }   
-                        if(FD_ISSET(socket_data, &readfs_fils)){
-                            if((desc_value = recvfrom(socket_data, buffer, sizeof(buffer), 0,(struct sockaddr*)&clientAddr, &len)) < 0){
+                printf("avant while\n");
+                while(1){
+                    // envoie du paquet
+                    printf("serie d'envoi du paquet\n");
+                    FD_SET(socket_data, &readfs_fils);
+                    select(6, &readfs_fils, NULL, NULL,&zero);
+                    if(FD_ISSET(socket_data, &readfs_fils)){
+                        printf("FD is set\n");
+                        if((desc_value = recvfrom(socket_data, buffer, sizeof(buffer), 0,(struct sockaddr*)&clientAddr, &len)) < 0){
                                 perror("Erreur recvfrom");
                                 exit(0);
                             };
-                            printf("Message from UDP client: %s\n", buffer);
-                            bzero(buffer, sizeof(buffer));
-                            seg_nb++;
-                            break;
+                        memcpy(ack_char,buffer+3,6);
+                        numero_ack = atoi(ack_char);
+                        // ACK reçu continu
+                        if(numero_ack > dernier_ack){
+                            taille_fenetre = taille_fenetre + (numero_ack - dernier_ack);
+                            dernier_ack = numero_ack;
+                            retransmission=0;
+                            //seg_nb=numero_ack+1;
                         }
                         else{
-                        if((desc_value = sendto(socket_data, buffer, sizeof(buffer), 0, (struct sockaddr*)&clientAddr, sizeof(clientAddr))) < 0){
-                            perror("Erreur sendto");
-                            exit(0);
+                            taille_fenetre ++;
+                            retransmission = 1;
+                            seg_nb=dernier_ack+1;
                         }
-                        printf("erreur de transmission renvoie du paquet : %d\n", seg_nb);
+                        if(numero_ack==ack_final){
+                            break;
                         }
+                        bzero(buffer, sizeof(buffer));
                     }
-                    //printf("Nom du fichier %s\n",name_fichier);
+                    else{
+                        printf("else démarrer\n");
+                        if (taille_fenetre > 0){
+                            if(retransmission==0){
+                                if ((seg_nb%500) < dernier_seg){
+                                    printf("retransmission paquet : %d\n", seg_nb);
+                                    memcpy(buffer,seg_data[seg_nb%500],1024);
+                                    if((desc_value = sendto(socket_data, (const char*)buffer, sizeof(buffer), 0, (struct sockaddr*)&clientAddr, sizeof(clientAddr))) < 0){
+                                        perror("Erreur sendto");
+                                        exit(0);
+                                    }
+                                    taille_fenetre--;
+                                    seg_nb++;
+                                    }
+                                else{
+                                    printf("transmission paquet : %d\n", seg_nb);
+                                    sprintf(buffer,"%06d",seg_nb);
+                                    taille_DATA = fread(chaine,1,1018,fichier);
+                                    memcpy(buffer+6,chaine,taille_DATA);
+                                    if((desc_value = sendto(socket_data, (const char*)buffer, sizeof(buffer), 0, (struct sockaddr*)&clientAddr, sizeof(clientAddr))) < 0){
+                                        perror("Erreur sendto");
+                                        exit(0);
+                                    }
+                                    taille_fenetre--;
+                                    memcpy(seg_data[seg_nb%500],buffer,1024);
+                                    if (taille_DATA < 1018){
+                                        ack_final = seg_nb;
+                                    }
+                                    seg_nb++;
+                                    dernier_seg=(dernier_seg+1)%500;
+                                    }
+                            }
+                            if(retransmission==1){
+                                if ((seg_nb%500) < dernier_seg){
+                                    printf("retransmission paquet : %d\n", seg_nb);
+                                    memcpy(buffer,seg_data[seg_nb%500],1024);
+                                    if((desc_value = sendto(socket_data, (const char*)buffer, sizeof(buffer), 0, (struct sockaddr*)&clientAddr, sizeof(clientAddr))) < 0){
+                                        perror("Erreur sendto");
+                                        exit(0);
+                                    }
+                                    taille_fenetre--;
+                                    seg_nb++;
+                                    }
+                                else{
+                                    sprintf(buffer,"%06d",seg_nb);
+                                    taille_DATA = fread(chaine,1,1018,fichier);
+                                    memcpy(buffer+6,chaine,taille_DATA);
+                                    if((desc_value = sendto(socket_data, (const char*)buffer, sizeof(buffer), 0, (struct sockaddr*)&clientAddr, sizeof(clientAddr))) < 0){
+                                        perror("Erreur sendto");
+                                        exit(0);
+                                    }
+                                    taille_fenetre--;
+                                    memcpy(seg_data[seg_nb%500],buffer,1024);
+                                    if (taille_DATA < 1018){
+                                        ack_final = seg_nb;
+                                    }
+                                    seg_nb++;
+                                    dernier_seg=(dernier_seg+1)%500;
+                                }
+                            }
+                        }
+                        else{
+                            printf("Démarrage timer\n");
+                            timeout.tv_sec = 0;
+                            timeout.tv_usec = 700000;
+                            FD_SET(socket_data, &readfs_fils);
+                            int ret;
+                            if((ret = select(6, &readfs_fils, NULL, NULL, &timeout)) < 0) {
+                                perror("select()");
+                                exit(0);
+                            } 
+                            if(FD_ISSET(socket_data, &readfs_fils)){
+                                printf("FD is set\n");
+                                if((desc_value = recvfrom(socket_data, buffer, sizeof(buffer), 0,(struct sockaddr*)&clientAddr, &len)) < 0){
+                                        perror("Erreur recvfrom");
+                                        exit(0);
+                                    };
+                                memcpy(ack_char,buffer+3,6);
+                                numero_ack = atoi(ack_char);
+                                // ACK reçu continu
+                                if(numero_ack > dernier_ack){
+                                    taille_fenetre = taille_fenetre + (numero_ack - dernier_ack);
+                                    dernier_ack = numero_ack;
+                                    retransmission=0;
+                                    //seg_nb=numero_ack+1;
+                                }
+                                else{
+                                    taille_fenetre ++;
+                                    retransmission = 1;
+                                    seg_nb=dernier_ack+1;
+                                }
+                                if(numero_ack==ack_final){
+                                    break;
+                                }
+
+                            }
+                            else{
+                                taille_fenetre ++;
+                                retransmission = 1;
+                                seg_nb=dernier_ack+1;
+                                }
+                        }
+                        bzero(buffer, sizeof(buffer));
+                    }
                 }
                 char fin[3] = "FIN"; 
                 if((desc_value = sendto(socket_data, (const char*)fin, sizeof(buffer), 0, (struct sockaddr*)&clientAddr, sizeof(clientAddr))) < 0){
