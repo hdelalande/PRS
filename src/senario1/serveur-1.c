@@ -122,8 +122,8 @@ int main(int argc, char* argv[]) {
                 fd_set readfs_fils;
                 FD_ZERO(&readfs_fils);
                 //paramètre de la fenetre
-                int taille_fenetre = 4;
-                char seg_data[500][1024];
+                int taille_fenetre = 8;
+                char seg_data[5000][1024];
                 int dernier_seg=1;
                 int dernier_ack=0;
                 char ack_char[6];
@@ -150,13 +150,13 @@ int main(int argc, char* argv[]) {
                         numero_ack = atoi(ack_char);
                         // ACK reçu continu
                         if(numero_ack > dernier_ack){
-                            taille_fenetre = taille_fenetre + (numero_ack - dernier_ack);
+                            taille_fenetre = taille_fenetre*2;
                             dernier_ack = numero_ack;
                             retransmission=0;
                             //seg_nb=numero_ack+1;
                         }
                         else{
-                            taille_fenetre ++;
+                            taille_fenetre = 8;
                             retransmission = 1;
                             seg_nb=dernier_ack+1;
                         }
@@ -169,9 +169,9 @@ int main(int argc, char* argv[]) {
                         printf("else démarrer\n");
                         if (taille_fenetre > 0){
                             if(retransmission==0){
-                                if ((seg_nb%500) < dernier_seg){
+                                if ((seg_nb%5000) < dernier_seg){
                                     printf("retransmission paquet : %d\n", seg_nb);
-                                    memcpy(buffer,seg_data[seg_nb%500],1024);
+                                    memcpy(buffer,seg_data[seg_nb%5000],1024);
                                     if((desc_value = sendto(socket_data, (const char*)buffer, sizeof(buffer), 0, (struct sockaddr*)&clientAddr, sizeof(clientAddr))) < 0){
                                         perror("Erreur sendto");
                                         exit(0);
@@ -182,25 +182,28 @@ int main(int argc, char* argv[]) {
                                 else{
                                     printf("transmission paquet : %d\n", seg_nb);
                                     sprintf(buffer,"%06d",seg_nb);
+                                    printf("lecture %d\n",seg_nb);
                                     taille_DATA = fread(chaine,1,1018,fichier);
                                     memcpy(buffer+6,chaine,taille_DATA);
-                                    if((desc_value = sendto(socket_data, (const char*)buffer, sizeof(buffer), 0, (struct sockaddr*)&clientAddr, sizeof(clientAddr))) < 0){
-                                        perror("Erreur sendto");
-                                        exit(0);
-                                    }
-                                    taille_fenetre--;
-                                    memcpy(seg_data[seg_nb%500],buffer,1024);
-                                    if (taille_DATA < 1018){
-                                        ack_final = seg_nb;
-                                    }
-                                    seg_nb++;
-                                    dernier_seg=(dernier_seg+1)%500;
-                                    }
+                                    if (taille_DATA>0){
+                                        if((desc_value = sendto(socket_data, (const char*)buffer, sizeof(buffer), 0, (struct sockaddr*)&clientAddr, sizeof(clientAddr))) < 0){
+                                            perror("Erreur sendto");
+                                            exit(0);
+                                        }
+                                        taille_fenetre--;
+                                        memcpy(seg_data[seg_nb%5000],buffer,1024);
+                                        if (taille_DATA < 1018){
+                                            ack_final = seg_nb;
+                                        }
+                                        seg_nb++;
+                                        dernier_seg=(dernier_seg+1)%5000;
+                                        }
+                                }
                             }
                             if(retransmission==1){
-                                if ((seg_nb%500) < dernier_seg){
+                                if ((seg_nb%5000) < dernier_seg){
                                     printf("retransmission paquet : %d\n", seg_nb);
-                                    memcpy(buffer,seg_data[seg_nb%500],1024);
+                                    memcpy(buffer,seg_data[seg_nb%5000],1024);
                                     if((desc_value = sendto(socket_data, (const char*)buffer, sizeof(buffer), 0, (struct sockaddr*)&clientAddr, sizeof(clientAddr))) < 0){
                                         perror("Erreur sendto");
                                         exit(0);
@@ -211,18 +214,21 @@ int main(int argc, char* argv[]) {
                                 else{
                                     sprintf(buffer,"%06d",seg_nb);
                                     taille_DATA = fread(chaine,1,1018,fichier);
+                                    printf("lecture 2 %d %d\n",seg_nb,taille_DATA);
+                                    if (taille_DATA>0){
                                     memcpy(buffer+6,chaine,taille_DATA);
                                     if((desc_value = sendto(socket_data, (const char*)buffer, sizeof(buffer), 0, (struct sockaddr*)&clientAddr, sizeof(clientAddr))) < 0){
                                         perror("Erreur sendto");
                                         exit(0);
                                     }
                                     taille_fenetre--;
-                                    memcpy(seg_data[seg_nb%500],buffer,1024);
+                                    memcpy(seg_data[seg_nb%5000],buffer,1024);
                                     if (taille_DATA < 1018){
                                         ack_final = seg_nb;
                                     }
                                     seg_nb++;
-                                    dernier_seg=(dernier_seg+1)%500;
+                                    dernier_seg=(dernier_seg+1)%5000;
+                                    }
                                 }
                             }
                         }
@@ -246,13 +252,13 @@ int main(int argc, char* argv[]) {
                                 numero_ack = atoi(ack_char);
                                 // ACK reçu continu
                                 if(numero_ack > dernier_ack){
-                                    taille_fenetre = taille_fenetre + (numero_ack - dernier_ack);
+                                    taille_fenetre = taille_fenetre * 2;
                                     dernier_ack = numero_ack;
                                     retransmission=0;
                                     //seg_nb=numero_ack+1;
                                 }
                                 else{
-                                    taille_fenetre ++;
+                                    taille_fenetre = 8;
                                     retransmission = 1;
                                     seg_nb=dernier_ack+1;
                                 }
@@ -262,10 +268,11 @@ int main(int argc, char* argv[]) {
 
                             }
                             else{
-                                taille_fenetre ++;
+                                taille_fenetre = 8 ;
                                 retransmission = 1;
                                 seg_nb=dernier_ack+1;
                                 }
+                            
                         }
                         bzero(buffer, sizeof(buffer));
                     }
